@@ -17,6 +17,7 @@ var webdriver = require('selenium-webdriver');
 var Q = require("q");
 var util = require("util");
 var events = require("events");
+var url = require("url");
 
 var WebdriverLauncher = module.exports = function() {};
 
@@ -46,12 +47,26 @@ WebdriverLauncher.prototype.start = function(param) {
     builder.withCapabilities(config.capabilities);
 
     self.url = param.url;
+    if (config.robot) {
+        self.robot = true;
+        self.robotHost = config.robotHost || "127.0.0.1";
+        self.robotPort = config.robotPort || 7778;
+        self.robotServer = url.format({
+            protocol: "http",
+            hostname: self.robotHost,
+            port: self.robotPort,
+            pathname: "/"
+        });
+        self.robotWaitTimeout = config.robotWaitTimeout || 10000;
+        self.url += "&plugin=" + encodeURIComponent(self.robotServer + "robot");
+    }
     self.keepAliveDelay = config.keepAliveDelay;
     self.driver = builder.build();
 
     // starting the browser:
     Q(self.driver.getSession())
         .then(self.onReceivedSession.bind(self))
+        .then(self.waitRobot.bind(self))
         .then(self.beginConnection.bind(self))
         .catch(self.onWebdriverError.bind(self))
         .then(function() {
@@ -74,8 +89,30 @@ WebdriverLauncher.prototype.onReceivedSession = function(session) {
     this.emit("log", ["debug", "Capabilities: %j", session.getCapabilities().serialize()]);
 };
 
+WebdriverLauncher.prototype.waitRobot = function() {
+    var self = this;
+    if (!this.shouldEnd && self.robot) {
+        if (!this.robotWaitEndTime) {
+            this.robotWaitEndTime = Date.now() + self.robotWaitTimeout;
+        }
+        return self.driver.get(self.robotServer).then(function() {
+            return self.driver.executeScript("return window.SeleniumJavaRobot != null;");
+        }).then(function(ready) {
+            if (ready) {
+                return;
+            }
+            if (Date.now() > self.robotWaitEndTime) {
+                return Q.reject(new Error("Timeout while waiting for the robot to be ready!"));
+            }
+            return self.waitRobot();
+        });
+    }
+};
+
 WebdriverLauncher.prototype.beginConnection = function() {
-    return this.driver.get(this.url);
+    if (!this.shouldEnd) {
+        return this.driver.get(this.url);
+    }
 };
 
 WebdriverLauncher.prototype.keepConnection = function() {

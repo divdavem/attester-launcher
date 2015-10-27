@@ -23,7 +23,7 @@ var SauceLabsLauncher = module.exports = function() {};
 util.inherits(SauceLabsLauncher, WebdriverLauncher);
 
 SauceLabsLauncher.prototype.start = function(param) {
-    var config = param.config;
+    var config = copyMap(param.config);
     var configError = "";
 
     var username = config.username || process.env.SAUCE_USERNAME;
@@ -42,17 +42,43 @@ SauceLabsLauncher.prototype.start = function(param) {
         return;
     }
 
-    var capabilities = copyMap(config.capabilities);
+    delete config.username;
+    delete config.accessKey;
+    config.server = config.server || process.env.SAUCE_SELENIUM_SERVER || "http://ondemand.saucelabs.com/wd/hub";
+    config.keepAliveDelay = config.keepAliveDelay || 45000;
+
+    var capabilities = config.capabilities = copyMap(config.capabilities);
     capabilities.username = username;
     capabilities.accessKey = accessKey;
 
+    if (config.robot) {
+        var robotArgs = config.robotArgs;
+        if (!robotArgs) {
+            robotArgs = [];
+            if (config.robotHost) {
+                robotArgs.push("--host", config.robotHost);
+            }
+            if (config.robotPort) {
+                robotArgs.push("--port", config.robotPort);
+            }
+        }
+        var robotURL = config.robotURL;
+        if (!robotURL) {
+            // TODO: choose the right URL depending on the operating system defined in capabilities
+            robotURL = "https://github.com/divdavem/robot-server/raw/exe/robot-server.exe";
+        }
+        capabilities.prerun = {
+            background: true,
+            args: robotArgs,
+            executable: robotURL
+        };
+    }
+    delete config.robotURL;
+    delete config.robotArgs;
+
     WebdriverLauncher.prototype.start.call(this, {
         url: param.url,
-        config: {
-            server: config.server || process.env.SAUCE_SELENIUM_SERVER || "http://ondemand.saucelabs.com/wd/hub",
-            capabilities: capabilities,
-            keepAliveDelay: config.keepAliveDelay || 45000
-        }
+        config: config
     });
 };
 

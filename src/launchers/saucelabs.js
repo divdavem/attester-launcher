@@ -59,7 +59,7 @@ SauceLabsLauncher.prototype.start = function(param) {
                 robotArgs.push("--host", config.robotHost);
             }
             if (config.robotPort) {
-                robotArgs.push("--port", config.robotPort);
+                robotArgs.push("--port", config.robotPort + "");
             }
         }
         var robotURL = config.robotURL;

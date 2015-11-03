@@ -54,7 +54,8 @@ WebdriverLauncher.prototype.start = function(param) {
         self.robotServer = url.format({
             protocol: "http",
             hostname: self.robotHost,
-            port: self.robotPort,
+            // port 80 is the default port for http:
+            port: self.robotPort == 80 ? null : self.robotPort,
             pathname: "/"
         });
         self.robotWaitTimeout = config.robotWaitTimeout || 10000;

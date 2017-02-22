@@ -225,19 +225,29 @@ The `$vboxrobot` launcher allows to use a web browser from a virtual machine man
 
 * `command` Command to use inside the virtual machine to start the browser. This can be either a simple string, or an array in order to include command line arguments (which are then positioned before `commandArgs`).
 
-* `commandArgs` Arguments to add to `command`. The URL the browser should connect to is appended as the last argument.
+* `commandArgs` Arguments to add to `command`. The URL the browser should connect to is appended as the last argument (`${ATTESTER-URL}`).
 
 * `launcherOnly` If set to true, `command` is supposed to be only a launcher, which means that, when it exits, it does not mean the browser exited, so this does not cause the virtual machine to be stopped. Defaults to false (so the machine is stopped after `command` stops running).
 
-* `pingCommand` If specified, this command will be executed repetitively until its return code is 0, before `command` is started. This is useful especially to wait for the network to be connected in the virtual machine before starting the web browser. This can be either a simple string (if no argument needs to be passed) or an array (with command line arguments). The host name of the attester server is appended as the last argument.
+* `pingCommand` If specified, this command will be executed repetitively until its return code is 0, before `command` is started. This is useful especially to wait for the network to be connected in the virtual machine before starting the web browser. This can be either a simple string (if no argument needs to be passed) or an array (with command line arguments). The host name of the attester server is appended as the last argument (`${ATTESTER-HOSTNAME}`).
 
 * `pingInterval` Interval (in milliseconds) between a unsuccessful ping command (returning a non-zero exit code) and the next execution of the ping command. Defaults to 1000 (which is one second).
 
-* `username` Name of user to use inside the virtual machine to start `command` and `pingCommand`.
+* `initCommands` Array of commands to execute just before `command` and just after `pingCommand`. These commands can be used to configure the virtual machine before starting the browser. Each command is expected to be an object with a `command` property containing an array of string arguments.
+
+* `username` Name of user to use inside the virtual machine to start `pingCommand`, `initCommands` and `command`.
 
 * `password` Password to use inside the virtual machine.
 
 * `closeOnFailedCalibration` If set to true (which is the default), the virtual machine will be closed (powered off and deleted) when the calibration fails. This parameter can be set to false to let the virtual machine continue running when the calibration fails. Note that this parameter requires vbox-robot version 0.0.4 and later (it is ignored with earlier versions).
+
+The following variables can be used in the parameters of `command`, `pingCommand` and `initCommands`:
+
+* `${ATTESTER-URL}` URL to be started in the web browser to connect to attester.
+
+* `${ATTESTER-HOSTNAME}` Host name part of `${ATTESTER-URL}`.
+
+* `${ATTESTER-VMUNIQUEID}` Unique identifier generated for the current virtual machine.
 
 ## License
 

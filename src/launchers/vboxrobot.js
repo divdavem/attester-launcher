@@ -21,6 +21,13 @@ var request = require("../util/request");
 
 var VBoxRobotLauncher = module.exports = function() {};
 
+var crypto = require("crypto");
+var idNumber = 0;
+var createId = function() {
+    idNumber++;
+    return idNumber + new Buffer(crypto.pseudoRandomBytes(8)).toString("hex");
+};
+
 util.inherits(VBoxRobotLauncher, events.EventEmitter);
 
 var wait = function(delay) {
@@ -53,7 +60,18 @@ VBoxRobotLauncher.prototype.start = function(param) {
     });
     var actionUrls = null;
 
+    var variables = {};
+    var replaceVariables = function(item) {
+        return item.replace(/\$\{([a-zA-Z0-9-]+)\}/g, function(wholeString, variableName) {
+            if (variables.hasOwnProperty(variableName)) {
+                return variables[variableName];
+            }
+            return wholeString;
+        });
+    };
+
     var run = function(commandLine) {
+        commandLine = commandLine.map(replaceVariables);
         return request({
             url: actionUrls.run,
             method: "POST",
@@ -69,7 +87,7 @@ VBoxRobotLauncher.prototype.start = function(param) {
         });
     };
 
-    var pingCommandLine = config.pingCommand ? [].concat(config.pingCommand, url.parse(param.url).hostname) : null;
+    var pingCommandLine = config.pingCommand ? [].concat(config.pingCommand, "${ATTESTER-HOSTNAME}") : null;
     var waitForConnectivity = function() {
         if (!self.stopped && pingCommandLine) {
             return run(pingCommandLine).then(function(response) {
@@ -77,6 +95,14 @@ VBoxRobotLauncher.prototype.start = function(param) {
                     return wait(config.pingInterval || 1000).then(waitForConnectivity);
                 }
             });
+        }
+    };
+
+    var initCommands = config.initCommands ? [].concat(config.initCommands) : [];
+    var runInitCommands = function() {
+        if (!self.stopped && initCommands.length > 0) {
+            var entry = initCommands.shift();
+            return run(entry.command).then(runInitCommands);
         }
     };
 
@@ -92,12 +118,16 @@ VBoxRobotLauncher.prototype.start = function(param) {
         })
         .then(function(response) {
             actionUrls = response;
+            variables["ATTESTER-VMUNIQUEID"] = createId();
+            variables["ATTESTER-HOSTNAME"] = url.parse(param.url).hostname;
+            // the full URL has to pass through replaceVariables to allow variables to be specified in urlExtraParameters:
+            variables["ATTESTER-URL"] = replaceVariables(param.url + "&plugin=" + encodeURIComponent(actionUrls.robotjs));
             return waitForConnectivity();
         })
+        .then(runInitCommands)
         .then(function() {
             if (!self.stopped) {
-                var attesterURL = param.url + "&plugin=" + encodeURIComponent(actionUrls.robotjs);
-                run([].concat(config.command, config.commandArgs || [], attesterURL))
+                run([].concat(config.command, config.commandArgs || [], "${ATTESTER-URL}"))
                     .catch(errorHandler)
                     .then(function() {
                         if (!config.launcherOnly) {

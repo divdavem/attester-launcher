@@ -12,128 +12,198 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+var Q = require("q");
 var webdriver = require('selenium-webdriver');
-var Key = webdriver.Key;
-var exposedKeys = {
-    Backspace: {
-        code: Key.BACK_SPACE
-    }
-};
-Object.keys(Key).forEach(function(key) {
-    exposedKeys[key] = {
-        code: Key[key]
-    };
-});
 
 // Note: the following function is stringified by webdriver to be run in the browser
-var script = function(exposedKeys) {
+var script = function() {
     /* globals window: false */
-    var robot = window.phantomJSRobot;
-    if (!robot) {
-        var callback = null;
-        var immediateTimeout = null;
-        var longTimeout = null;
-        var queue = [];
-        var clearTimeouts = function() {
-            if (longTimeout) {
-                clearTimeout(longTimeout);
-                longTimeout = null;
+    var SeleniumJavaRobot = window.SeleniumJavaRobot;
+    if (!SeleniumJavaRobot) {
+        var callIds = 0;
+        var calls = [];
+        var slice = calls.slice;
+        var notifyRobot = null;
+        var notifyRobotTimeout = null;
+
+        var callNotifyRobot = function(response) {
+            if (notifyRobotTimeout) {
+                clearTimeout(notifyRobotTimeout);
+                notifyRobotTimeout = null;
             }
-            if (immediateTimeout) {
-                clearTimeout(immediateTimeout);
-                immediateTimeout = null;
-            }
-        };
-        var callCallback = function() {
-            clearTimeouts();
-            var curCallback = callback;
-            var curQueue = queue;
-            if (curCallback) {
-                callback = null;
-                queue = [];
-                curCallback(curQueue);
+            var fn = notifyRobot;
+            if (fn) {
+                notifyRobot = null;
+                fn(response);
             }
         };
-        var planCallback = function() {
-            if (!immediateTimeout && callback && queue.length > 0) {
-                immediateTimeout = setTimeout(callCallback, 0);
+
+        var notifyRobotIfNeeded = function() {
+            if (notifyRobot && calls.length > 0) {
+                callNotifyRobot(calls[0].call);
             }
         };
-        var setCallback = function(value) {
-            callback = value;
-            planCallback();
-            longTimeout = setTimeout(callCallback, 1000);
+
+        var notifyRobotOnTimeout = function() {
+            notifyRobotIfNeeded();
+            callNotifyRobot(null);
         };
-        robot = window.phantomJSRobot = {
-            __setCallback: setCallback,
-            keys: exposedKeys,
-            sendEvent: function() {
-                queue.push(arguments);
-                planCallback();
+
+        SeleniumJavaRobot = window.SeleniumJavaRobot = {
+            __getInfo: function(cb) {
+                notifyRobot = cb;
+                notifyRobotTimeout = setTimeout(notifyRobotOnTimeout, 1000);
+                notifyRobotIfNeeded();
+            },
+            __callback: function(callId, result) {
+                var curCall = calls[0];
+                if (curCall && calls[0].call.id == callId) {
+                    calls.shift();
+                    setTimeout(function() {
+                        var curCallback = curCall.callback;
+                        if (typeof curCallback == "function") {
+                            curCallback = {
+                                fn: curCallback
+                            };
+                        }
+                        if (curCallback && typeof curCallback.fn == "function") {
+                            curCallback.fn.call(curCallback.scope, result, curCallback.args);
+                        }
+                    }, 0);
+                }
             }
         };
-        window.addEventListener("unload", callCallback);
+
+        var createFunction = function(name, argsNumber) {
+            return SeleniumJavaRobot[name] = function() {
+                var curCallId = "c" + callIds;
+                callIds++;
+                calls.push({
+                    call: {
+                        name: name,
+                        id: curCallId,
+                        args: slice.call(arguments, 0, argsNumber)
+                    },
+                    callback: arguments[argsNumber]
+                });
+                notifyRobotIfNeeded();
+            };
+        };
+
+        createFunction("mouseMove", 2);
+        createFunction("smoothMouseMove", 5);
+        createFunction("mousePress", 1);
+        createFunction("mouseRelease", 1);
+        createFunction("mouseWheel", 1);
+        createFunction("keyPress", 1);
+        createFunction("keyRelease", 1);
+        createFunction("getOffset", 0);
     }
-    robot.__setCallback(arguments[arguments.length - 1]);
+
+    return SeleniumJavaRobot.__getInfo.apply(SeleniumJavaRobot, arguments);
 };
 
 var BUTTONS = {
-    "left": webdriver.Button.LEFT,
-    "right": webdriver.Button.RIGHT,
-    "middle": webdriver.Button.MIDDLE
+    16: webdriver.Button.LEFT,
+    8: webdriver.Button.MIDDLE,
+    4: webdriver.Button.RIGHT
 };
 
-module.exports = function(driver, stopPromise, logError) {
+var getKey = function(javaKeyCode) {
+    return String.fromCharCode(javaKeyCode);
+};
+
+module.exports = function(driver, stopPromise, logFunction) {
     var stopped = false;
     stopPromise.then(function() {
         stopped = true;
     });
 
-    var currentActions = null;
     var tasksHandlers = {
-        mousemove: function(x, y) {
-            currentActions.move({
+        mouseMove: function(x, y) {
+            return driver.actions().move({
                 origin: webdriver.Origin.VIEWPORT,
                 x: x,
                 y: y,
                 duration: 0
+            }).perform();
+        },
+
+        smoothMouseMove: function(fromX, fromY, toX, toY, duration) {
+            return driver.actions().move({
+                origin: webdriver.Origin.VIEWPORT,
+                x: fromX,
+                y: fromY,
+                duration: 0
+            }).move({
+                origin: webdriver.Origin.VIEWPORT,
+                x: toX,
+                y: toY,
+                duration: duration
+            }).perform();
+        },
+
+        mousePress: function(buttons) {
+            return driver.actions().press(BUTTONS[buttons]).perform();
+        },
+
+        mouseRelease: function(buttons) {
+            return driver.actions().release(BUTTONS[buttons]).perform();
+        },
+
+        keyPress: function(key) {
+            return driver.actions().keyDown(getKey(key)).perform();
+        },
+
+        keyRelease: function(key) {
+            return driver.actions().keyUp(getKey(key)).perform();
+        },
+
+        getOffset: function() {
+            return Q({
+                x: 0,
+                y: 0
             });
-        },
-        mousedown: function(x, y, button) {
-            currentActions.press(BUTTONS[button]);
-        },
-        mouseup: function(x, y, button) {
-            currentActions.release(BUTTONS[button]);
-        },
-        keydown: function(key) {
-            key = key.code || key;
-            currentActions.keyDown(key);
-        },
-        keyup: function(key) {
-            key = key.code || key;
-            currentActions.keyUp(key);
         }
     };
 
+    var defaultHandler = function() {
+        return Q.reject("Unsupported operation!");
+    };
+
     var executeTask = function(task) {
-        var handler = tasksHandlers[task[0]];
-        if (handler) {
-            task.shift();
-            handler.apply(null, task);
-        }
+        logFunction(["debug", "Robot action %s", JSON.stringify(task)]);
+        var handler = tasksHandlers[task.name] || defaultHandler;
+        return Q(handler.apply(null, task.args)).then(function(result) {
+            return {
+                success: true,
+                result: result
+            };
+        }).catch(function(error) {
+            return {
+                success: false,
+                result: error + ""
+            }
+        }).then(function(result) {
+            if (stopped) {
+                return;
+            }
+            return driver.executeScript("window.SeleniumJavaRobot.__callback(arguments[0], arguments[1])", task.id, result);
+        });
     };
 
     var waitForTasks = function() {
         if (stopped) {
             return;
         }
-        return driver.executeAsyncScript(script, exposedKeys).then(function(tasks) {
+        return driver.executeAsyncScript(script).then(function(task) {
             if (stopped) {
                 return;
             }
-            currentActions = driver.actions();
-            tasks.forEach(executeTask);
-            return currentActions.perform().catch(logError).then(waitForTasks);
+            if (task) {
+                return executeTask(task).then(waitForTasks);
+            }
+            return waitForTasks();
         });
     };
 

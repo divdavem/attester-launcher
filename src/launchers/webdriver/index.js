@@ -65,8 +65,8 @@ WebdriverLauncher.prototype.start = function(param) {
                     self.stopResolve = resolve;
                 });
                 if (config.robot) {
-                    installRobot(self.driver, self.stopPromise, function(error) {
-                        self.emit("log", ["error", "Error while executing robot action: %s", error + ""]);
+                    installRobot(self.driver, self.stopPromise, function(log) {
+                        self.emit("log", log);
                     });
                 }
                 self.keepConnection();

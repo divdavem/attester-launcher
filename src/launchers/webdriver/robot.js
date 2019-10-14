@@ -14,6 +14,7 @@
  */
 var Q = require("q");
 var webdriver = require('selenium-webdriver');
+var KEYS_MAP = require('./keys').KEYS_MAP;
 
 // Note: the following function is stringified by webdriver to be run in the browser
 var script = function() {
@@ -109,10 +110,6 @@ var BUTTONS = {
     4: webdriver.Button.RIGHT
 };
 
-var getKey = function(javaKeyCode) {
-    return String.fromCharCode(javaKeyCode);
-};
-
 module.exports = function(driver, stopPromise, logFunction) {
     var stopped = false;
     stopPromise.then(function() {
@@ -151,12 +148,20 @@ module.exports = function(driver, stopPromise, logFunction) {
             return driver.actions().release(BUTTONS[buttons]).perform();
         },
 
-        keyPress: function(key) {
-            return driver.actions().keyDown(getKey(key)).perform();
+        keyPress: function(javaKey) {
+            var key = KEYS_MAP[+javaKey];;
+            if (!key) {
+                return Q.reject("Unsupported key: " + javaKey);
+            }
+            return driver.actions().keyDown(key).perform();
         },
 
-        keyRelease: function(key) {
-            return driver.actions().keyUp(getKey(key)).perform();
+        keyRelease: function(javaKey) {
+            var key = KEYS_MAP[+javaKey];;
+            if (!key) {
+                return Q.reject("Unsupported key: " + javaKey);
+            }
+            return driver.actions().keyUp(key).perform();
         },
 
         getOffset: function() {
